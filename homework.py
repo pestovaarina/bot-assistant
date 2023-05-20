@@ -1,12 +1,15 @@
 import os
-import requests
 import time
 import logging
 import sys
-import telegram
-
-from dotenv import load_dotenv
+import json
 from http import HTTPStatus
+
+import requests
+import telegram
+from dotenv import load_dotenv
+
+from exceptions import ServerNotAvailableError
 
 load_dotenv()
 
@@ -51,7 +54,7 @@ def send_message(bot, message):
     """Отправка текстового сообщения в ТГ чат."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
-    except Exception as error:
+    except telegram.error.TelegramError as error:
         text = (f'Ошибка при отпраке сообщения в ТГ.'
                 f'{error}')
         logger.error(text)
@@ -65,20 +68,23 @@ def get_api_answer(timestamp):
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
     except requests.RequestException as error:
-        logger.critical(f'Ошибка запроста к API {error}')
+        return f'Ошибка запроса к API {error}'
     if response.status_code != HTTPStatus.OK:
-        raise Exception(
+        raise ServerNotAvailableError(
             f'Код ответа {response.status_code}.'
             f'Сервер {ENDPOINT} недоступен'
         )
-    return response.json()
+    try:
+        return response.json()
+    except json.JSONDecodeError:
+        return 'Ошибка: неверный формат JSON-строки.'
 
 
 def check_response(response):
     """Проверка ответа API на соответствие документации."""
     if not isinstance(response, dict):
         raise TypeError('Ответ не является словарем.')
-    if ('homeworks' not in response) and ('current_date' not in response):
+    if 'homeworks' not in response and 'current_date' not in response:
         raise KeyError('Ответ не содержит необходимый ключ.')
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
@@ -90,7 +96,7 @@ def parse_status(homework):
     """Извлекаем информацию о статусе конкретной домашней работы."""
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
-    if 'homework_name' not in homework:
+    if homework_name is None:
         raise KeyError('В ответе API нет ключа "homework_name"')
     if homework_status not in HOMEWORK_VERDICTS:
         raise KeyError(f'Неожиданный статус домашней работы -'
@@ -103,7 +109,7 @@ def main():
     """Основная логика работы бота."""
     check_tokens()
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
-    timestamp = 0
+    timestamp = int(time.time())
     previous_message = ''
 
     while True:
