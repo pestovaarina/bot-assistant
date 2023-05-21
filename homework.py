@@ -76,8 +76,8 @@ def get_api_answer(timestamp):
         )
     try:
         return response.json()
-    except json.JSONDecodeError:
-        return 'Ошибка: неверный формат JSON-строки.'
+    except json.JSONDecodeError as error:
+        raise json.JSONDecodeError(f'Ошибка: {error}.')
 
 
 def check_response(response):
